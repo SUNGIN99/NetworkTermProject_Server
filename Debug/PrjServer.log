@@ -1,0 +1,12 @@
+﻿  PrjServer.cpp
+C:\Users\d\Desktop\UOU\3학년_2학기_네트웨크소프트웨어개발\termproject_20192179_최서현 - 복사본\PrjServer\PrjServer.cpp(174,6): warning C4996: 'inet_ntoa': Use inet_ntop() or InetNtop() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
+C:\Users\d\Desktop\UOU\3학년_2학기_네트웨크소프트웨어개발\termproject_20192179_최서현 - 복사본\PrjServer\PrjServer.cpp(190,5): warning C4996: 'WSAAddressToStringA': Use WSAAddressToStringW() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
+C:\Users\d\Desktop\UOU\3학년_2학기_네트웨크소프트웨어개발\termproject_20192179_최서현 - 복사본\PrjServer\PrjServer.cpp(46,14): warning C4101: 'retvalUDP' :참조되지 않은 지역 변수입니다.
+C:\Users\d\Desktop\UOU\3학년_2학기_네트웨크소프트웨어개발\termproject_20192179_최서현 - 복사본\PrjServer\PrjServer.cpp(263,33): warning C4996: 'inet_addr': Use inet_pton() or InetPton() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
+C:\Users\d\Desktop\UOU\3학년_2학기_네트웨크소프트웨어개발\termproject_20192179_최서현 - 복사본\PrjServer\PrjServer.cpp(284,34): warning C4996: 'inet_addr': Use inet_pton() or InetPton() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
+C:\Users\d\Desktop\UOU\3학년_2학기_네트웨크소프트웨어개발\termproject_20192179_최서현 - 복사본\PrjServer\PrjServer.cpp(303,3): warning C4996: 'WSAAddressToStringA': Use WSAAddressToStringW() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
+C:\Users\d\Desktop\UOU\3학년_2학기_네트웨크소프트웨어개발\termproject_20192179_최서현 - 복사본\PrjServer\PrjServer.cpp(347,2): warning C4996: 'WSAStringToAddressA': Use WSAStringToAddressW() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
+C:\Users\d\Desktop\UOU\3학년_2학기_네트웨크소프트웨어개발\termproject_20192179_최서현 - 복사본\PrjServer\PrjServer.cpp(376,2): warning C4996: 'WSAStringToAddressA': Use WSAStringToAddressW() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
+C:\Users\d\Desktop\UOU\3학년_2학기_네트웨크소프트웨어개발\termproject_20192179_최서현 - 복사본\PrjServer\PrjServer.cpp(430,4): warning C4996: 'inet_ntoa': Use inet_ntop() or InetNtop() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
+C:\Users\d\Desktop\UOU\3학년_2학기_네트웨크소프트웨어개발\termproject_20192179_최서현 - 복사본\PrjServer\PrjServer.cpp(439,3): warning C4996: 'WSAAddressToStringA': Use WSAAddressToStringW() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
+  PrjServer.vcxproj -> C:\Users\d\Desktop\UOU\3학년_2학기_네트웨크소프트웨어개발\termproject_20192179_최서현 - 복사본\PrjServer\Debug\PrjServer.exe
