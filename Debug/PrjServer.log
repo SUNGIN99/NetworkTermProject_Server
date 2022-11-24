@@ -1,13 +1,3 @@
 ﻿  PrjServer.cpp
-C:\Users\d\Desktop\c_git\SUNGIN99\NetworkTermProject_Server\PrjServer.cpp(174,6): warning C4996: 'inet_ntoa': Use inet_ntop() or InetNtop() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
-C:\Users\d\Desktop\c_git\SUNGIN99\NetworkTermProject_Server\PrjServer.cpp(190,5): warning C4996: 'WSAAddressToStringA': Use WSAAddressToStringW() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
-C:\Users\d\Desktop\c_git\SUNGIN99\NetworkTermProject_Server\PrjServer.cpp(46,14): warning C4101: 'retvalUDP' :참조되지 않은 지역 변수입니다.
-C:\Users\d\Desktop\c_git\SUNGIN99\NetworkTermProject_Server\PrjServer.cpp(263,33): warning C4996: 'inet_addr': Use inet_pton() or InetPton() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
-C:\Users\d\Desktop\c_git\SUNGIN99\NetworkTermProject_Server\PrjServer.cpp(284,34): warning C4996: 'inet_addr': Use inet_pton() or InetPton() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
-C:\Users\d\Desktop\c_git\SUNGIN99\NetworkTermProject_Server\PrjServer.cpp(303,3): warning C4996: 'WSAAddressToStringA': Use WSAAddressToStringW() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
-C:\Users\d\Desktop\c_git\SUNGIN99\NetworkTermProject_Server\PrjServer.cpp(347,2): warning C4996: 'WSAStringToAddressA': Use WSAStringToAddressW() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
-C:\Users\d\Desktop\c_git\SUNGIN99\NetworkTermProject_Server\PrjServer.cpp(376,2): warning C4996: 'WSAStringToAddressA': Use WSAStringToAddressW() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
-C:\Users\d\Desktop\c_git\SUNGIN99\NetworkTermProject_Server\PrjServer.cpp(430,4): warning C4996: 'inet_ntoa': Use inet_ntop() or InetNtop() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
-C:\Users\d\Desktop\c_git\SUNGIN99\NetworkTermProject_Server\PrjServer.cpp(439,3): warning C4996: 'WSAAddressToStringA': Use WSAAddressToStringW() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
-  LINK : C:\Users\d\Desktop\c_git\SUNGIN99\NetworkTermProject_Server\Debug\PrjServer.exe을(를) 찾을 수 없거나 마지막 증분 링크에 의해 빌드되지 않았습니다. 전체 링크를 수행하고 있습니다.
+C:\Users\d\Desktop\c_git\SUNGIN99\NetworkTermProject_Server\PrjServer.cpp(56,14): warning C4101: 'retvalUDP' :참조되지 않은 지역 변수입니다.
   PrjServer.vcxproj -> C:\Users\d\Desktop\c_git\SUNGIN99\NetworkTermProject_Server\Debug\PrjServer.exe
