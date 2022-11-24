@@ -2,3 +2,4 @@ C:\Users\최서현\Desktop\PrjServer\Debug\PrjServer.exe
 C:\Users\최서현\Desktop\네프 다시시작\PrjServer\Debug\PrjServer.exe
 C:\Users\d\Desktop\UOU\3학년_2학기_네트웨크소프트웨어개발\termproject_20192179_최서현\PrjServer\Debug\PrjServer.exe
 C:\Users\d\Desktop\UOU\3학년_2학기_네트웨크소프트웨어개발\termproject_20192179_최서현 - 복사본\PrjServer\Debug\PrjServer.exe
+C:\Users\d\Desktop\c_git\SUNGIN99\NetworkTermProject_Server\Debug\PrjServer.exe
