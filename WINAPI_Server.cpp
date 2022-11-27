@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include "resource.h"
 #include <commctrl.h>
 
@@ -39,10 +40,17 @@ int nTotalSockets = 0;
 SOCKETINFO* SocketInfoArray[FD_SETSIZE];
 //static SOCKET	g_sockv4;
 
-struct SOCKET_TCP_v4_v6 {
+typedef struct ALL_SERVER_SOCKET_ {
 	SOCKET tcp_v4;
 	SOCKET tcp_v6;
-};
+	SOCKET udp_recv_v4;
+	SOCKET udp_send_v4;
+	SOCKET udp_recv_v6;
+	SOCKET udp_send_v6;
+
+	SOCKADDR_IN remoteaddr_v4;
+	SOCKADDR_IN6 remoteaddr_v6;
+}ALL_SERVER_SOCKET;
 
 struct SOCKET_SendnRecv {
 	SOCKET recv;
@@ -202,9 +210,6 @@ DWORD WINAPI ServerMain(LPVOID arg) {
 
 	SOCKET listen_sockv6 = socket(AF_INET6, SOCK_STREAM, 0);
 	if (listen_sockv6 == INVALID_SOCKET) err_quit("socket()");
-
-	struct SOCKET_TCP_v4_v6 TCP_Socks = { listen_sockv4, listen_sockv6 };
-	SOCKET_TCP_v4_v6* TCP_Socks_P = &TCP_Socks;
 	
 	/*----- IPv4, 6 소켓 초기화 끝 -----*/
 
@@ -216,8 +221,12 @@ DWORD WINAPI ServerMain(LPVOID arg) {
 	SOCKET send_sock_UDPv4 = socket(AF_INET, SOCK_DGRAM, 0);
 	if (send_sock_UDPv4 == INVALID_SOCKET) err_quit("socket()");
 
-	struct SOCKET_SendnRecv UDPv4 = { listen_sock_UDPv4, send_sock_UDPv4 };
-	SOCKET_SendnRecv* UDPv4_P = &UDPv4;
+	// 소켓 주소 구조체 초기화
+	SOCKADDR_IN remoteaddr_v4;
+	ZeroMemory(&remoteaddr_v4, sizeof(remoteaddr_v4));
+	remoteaddr_v4.sin_family = AF_INET;
+	remoteaddr_v4.sin_addr.s_addr = inet_addr(MULTICAST_SEND_TO_CLIENT_IPv4);
+	remoteaddr_v4.sin_port = htons(REMOTEPORT);
 
 	/*----- UDP IPv4 소켓 초기화 끝 -----*/
 
@@ -229,16 +238,29 @@ DWORD WINAPI ServerMain(LPVOID arg) {
 	SOCKET send_sock_UDPv6 = socket(AF_INET6, SOCK_DGRAM, 0);
 	if (send_sock_UDPv6 == INVALID_SOCKET) err_quit("socket()");
 
-	struct SOCKET_SendnRecv UDPv6 = { listen_sock_UDPv6, send_sock_UDPv6 };
-	SOCKET_SendnRecv* UDPv6_P = &UDPv6;
+	// 소켓 주소 구조체 초기화
+	SOCKADDR_IN6 remoteaddr_v6;
+	ZeroMemory(&remoteaddr_v6, sizeof(remoteaddr_v6));
+	remoteaddr_v6.sin6_family = AF_INET6;
+	int remoteaddr6_len = sizeof(remoteaddr_v6);
+	WSAStringToAddress(MULTICAST_SEND_TO_CLIENT_IPv6, AF_INET6, NULL,
+		(SOCKADDR*)&remoteaddr_v6, &remoteaddr6_len);
+	remoteaddr_v6.sin6_port = htons(REMOTEPORT);
 
 	/*----- UDP IPv6 소켓 초기화 끝 -----*/
 
+	ALL_SERVER_SOCKET All_Sock = { 
+		listen_sockv4, listen_sockv6,
+		listen_sock_UDPv4, send_sock_UDPv4,
+		listen_sock_UDPv6, send_sock_UDPv6,
+		remoteaddr_v4, remoteaddr_v6};
+
+	ALL_SERVER_SOCKET* All_Sock_P = &All_Sock;
 
 	HANDLE hThread[3];
-	hThread[0] = CreateThread(NULL, 0, TCP, (LPVOID)TCP_Socks_P, 0, NULL);
-	hThread[1] = CreateThread(NULL, 0, UDPv4_Multicast, (LPVOID)UDPv4_P, 0, NULL);
-	hThread[2] = CreateThread(NULL, 0, UDPv6_Multicast, (LPVOID)UDPv6_P, 0, NULL);
+	hThread[0] = CreateThread(NULL, 0, TCP, (LPVOID)All_Sock_P, 0, NULL);
+	hThread[1] = CreateThread(NULL, 0, UDPv4_Multicast, (LPVOID)All_Sock_P, 0, NULL);
+	hThread[2] = CreateThread(NULL, 0, UDPv6_Multicast, (LPVOID)All_Sock_P, 0, NULL);
 	DWORD please = WaitForMultipleObjects(3, hThread, TRUE, INFINITE);
 	
 	return 0;
@@ -251,15 +273,20 @@ DWORD WINAPI SENDTOALL(LPVOID arg) {
 }
 
 DWORD WINAPI TCP(LPVOID arg) {
-	SOCKET_TCP_v4_v6* socks = (SOCKET_TCP_v4_v6*) arg;
+	ALL_SERVER_SOCKET* socks = (ALL_SERVER_SOCKET*) arg;
 	SOCKET listen_sockv4 = socks->tcp_v4;
 	SOCKET listen_sockv6 = socks->tcp_v6;
+	SOCKET send_sock_UDPv4 = socks->udp_send_v4;
+	SOCKET send_sock_UDPv6 = socks->udp_send_v6;
+
+	SOCKADDR_IN remoteaddr_v4 = socks->remoteaddr_v4;
+	SOCKADDR_IN6 remoteaddr_v6 = socks->remoteaddr_v6;
 
 	// 데이터 통신에 사용할 변수(공통)
 	FD_SET rset;
 	SOCKET client_sock;
 	int addrlen, i, j;
-	int retval;
+	int retval, retvalUDP;
 	SOCKADDR_IN clientaddrv4;
 	SOCKADDR_IN6 clientaddrv6;
 
@@ -293,6 +320,7 @@ DWORD WINAPI TCP(LPVOID arg) {
 	// listen()
 	retval = listen(listen_sockv6, SOMAXCONN);
 	if (retval == SOCKET_ERROR) err_quit("listen()");
+	Sleep(3000);
 
 	while (1) {
 		// 소켓 셋 초기화
@@ -375,6 +403,14 @@ DWORD WINAPI TCP(LPVOID arg) {
 							continue;
 						}
 					}
+
+					// UDP 에게도 보내기
+					retvalUDP = sendto(send_sock_UDPv4, ptr->buf, BUFSIZE, 0,
+						(SOCKADDR*)&remoteaddr_v4, sizeof(remoteaddr_v4));
+
+					// UDP 에게도 보내기
+					retvalUDP = sendto(send_sock_UDPv6, ptr->buf, BUFSIZE, 0,
+						(SOCKADDR*)&remoteaddr_v6, sizeof(remoteaddr_v6));
 				}
 			}
 		}
@@ -384,9 +420,15 @@ DWORD WINAPI TCP(LPVOID arg) {
 }
 
 DWORD WINAPI UDPv4_Multicast(LPVOID arg) {
-	SOCKET_SendnRecv* socks = (SOCKET_SendnRecv*)arg;
-	SOCKET listen_sock_UDPv4 = socks->recv;
-	SOCKET send_sock_UDPv4 = socks->send;
+	ALL_SERVER_SOCKET* socks = (ALL_SERVER_SOCKET*)arg;
+	SOCKET listen_sock_UDPv4 = socks->udp_recv_v4;
+
+	SOCKET send_sock_UDPv4 = socks->udp_send_v4;
+	SOCKET send_sock_UDPv6 = socks->udp_send_v6;
+
+	SOCKADDR_IN remoteaddr_v4 = socks->remoteaddr_v4;
+	SOCKADDR_IN6 remoteaddr_v6 = socks->remoteaddr_v6;
+
 	SOCKADDR_IN peeraddr_v4;
 	int addrlen_UDP;
 	char buf_UDP[BUFSIZE];
@@ -396,10 +438,11 @@ DWORD WINAPI UDPv4_Multicast(LPVOID arg) {
 	BOOL optval = TRUE;
 	int retvalUDP = setsockopt(listen_sock_UDPv4, SOL_SOCKET,
 		SO_REUSEADDR, (char*)&optval, sizeof(optval));
+	int retvalTCP;
 	if (retvalUDP == SOCKET_ERROR) {
 		err_quit("setsockopt()");
 	}
-
+	
 	SOCKADDR_IN serveraddrUDPv4;
 	ZeroMemory(&serveraddrUDPv4, sizeof(serveraddrUDPv4));
 	serveraddrUDPv4.sin_family = AF_INET;
@@ -426,14 +469,10 @@ DWORD WINAPI UDPv4_Multicast(LPVOID arg) {
 	//	err_quit("setsockopt()");
 	//}
 
-	SOCKADDR_IN remoteaddr_v4;
-	ZeroMemory(&remoteaddr_v4, sizeof(remoteaddr_v4));
-	remoteaddr_v4.sin_family = AF_INET;
-	remoteaddr_v4.sin_addr.s_addr = inet_addr(MULTICAST_SEND_TO_CLIENT_IPv4);
-	remoteaddr_v4.sin_port = htons(REMOTEPORT);
 	char ipaddr[50];
 	DWORD ipaddrlen = sizeof(ipaddr);
-
+	
+	Sleep(3000);
 	while (1) {
 		ZeroMemory(buf_UDP, BUFSIZE);
 		addrlen_UDP = sizeof(peeraddr_v4);
@@ -448,24 +487,57 @@ DWORD WINAPI UDPv4_Multicast(LPVOID arg) {
 			continue;
 		}
 
-		WSAAddressToString((SOCKADDR*)&peeraddr_v4, sizeof(peeraddr_v4), NULL, ipaddr, &ipaddrlen);
-		DisplayText_Acc("[UDPv4 서버] 클라이언트 데이터 수신: %s\n", ipaddr); // 서버가 보낸게 아니라면, 서버는 맨끝 바이트를 -1로 초기화
+		if (strcmp(buf_UDP, "UDP_CLIENT_ACK") == 0) {
+			WSAAddressToString((SOCKADDR*)&peeraddr_v4, sizeof(peeraddr_v4), NULL, ipaddr, &ipaddrlen);
+			DisplayText_Acc("[UDPv4 서버] 클라이언트 접속: %s\n", ipaddr); // 서버가 보낸게 아니라면, 서버는 맨끝 바이트를 -1로 초기화
+			continue;
+		}
+	
 		if (buf_UDP[BUFSIZE - 1] == -1) continue;
 
 		buf_UDP[BUFSIZE - 1] = -1;
+
+		// UDP v4에게 보냄
 		retvalUDP = sendto(send_sock_UDPv4, buf_UDP, BUFSIZE, 0,
 			(SOCKADDR*)&remoteaddr_v4, sizeof(remoteaddr_v4));
+
 		if (retvalUDP == SOCKET_ERROR) {
 			err_display("sendto()");
 			continue;
+		}
+
+		// UDP v6 에게도 보냄
+		retvalUDP = sendto(send_sock_UDPv6, buf_UDP, BUFSIZE, 0,
+			(SOCKADDR*)&remoteaddr_v6, sizeof(remoteaddr_v6));
+		if (retvalUDP == SOCKET_ERROR) {
+			err_display("sendto()");
+			continue;
+		}
+
+		// to TCP
+		for (int j = 0; j < nTotalSockets; j++) {
+			SOCKETINFO* ptr2 = SocketInfoArray[j];
+			retvalTCP = send(ptr2->sock, buf_UDP, BUFSIZE, 0);
+			if (retvalTCP == SOCKET_ERROR) {
+				err_display("send()");
+				RemoveSocketInfo(j);
+				--j; // 루프 인덱스 보정
+				continue;
+			}
 		}
 	}
 }
 
 DWORD WINAPI UDPv6_Multicast(LPVOID arg) {
-	SOCKET_SendnRecv* socks = (SOCKET_SendnRecv*)arg;
-	SOCKET listen_sock_UDPv6 = socks->recv;
-	SOCKET send_sock_UDPv6 = socks->send;
+	ALL_SERVER_SOCKET* socks = (ALL_SERVER_SOCKET*)arg;
+	SOCKET listen_sock_UDPv6 = socks->udp_recv_v6;
+
+	SOCKET send_sock_UDPv4 = socks->udp_send_v4;
+	SOCKET send_sock_UDPv6 = socks->udp_send_v6;
+
+	SOCKADDR_IN remoteaddr_v4 = socks->remoteaddr_v4;
+	SOCKADDR_IN6 remoteaddr_v6 = socks->remoteaddr_v6;
+
 	SOCKADDR_IN6 peeraddr_v6;
 	int addrlen_UDP;
 	char buf_UDP[BUFSIZE];
@@ -478,6 +550,7 @@ DWORD WINAPI UDPv6_Multicast(LPVOID arg) {
 	bool optval = TRUE;
 	int retvalUDP = setsockopt(listen_sock_UDPv6, SOL_SOCKET,
 		SO_REUSEADDR, (char*)&optval, sizeof(optval));
+	int retvalTCP;
 	if (retvalUDP == SOCKET_ERROR) {
 		err_quit("setsockopt()");
 	}
@@ -515,15 +588,7 @@ DWORD WINAPI UDPv6_Multicast(LPVOID arg) {
 		err_quit("setsockopt()");
 	}
 
-	// 소켓 주소 구조체 초기화
-	SOCKADDR_IN6 remoteaddr_v6;
-	ZeroMemory(&remoteaddr_v6, sizeof(remoteaddr_v6));
-	remoteaddr_v6.sin6_family = AF_INET6;
-	int remoteaddr6_len = sizeof(remoteaddr_v6);
-	WSAStringToAddress(MULTICAST_SEND_TO_CLIENT_IPv6, AF_INET6, NULL,
-		(SOCKADDR*)&remoteaddr_v6, &remoteaddr6_len);
-	remoteaddr_v6.sin6_port = htons(REMOTEPORT);
-
+	Sleep(3000);
 	while (1) {
 		addrlen_UDP = sizeof(peeraddr_v6);
 		retvalUDP = recvfrom(listen_sock_UDPv6, buf_UDP, BUFSIZE, 0,
@@ -533,16 +598,43 @@ DWORD WINAPI UDPv6_Multicast(LPVOID arg) {
 			continue;
 		}
 
-		WSAAddressToString((SOCKADDR*)&peeraddr_v6, sizeof(peeraddr_v6), NULL, ipaddr, &ipaddrlen);
-		DisplayText_Acc("[UDPv6 서버] 클라이언트 데이터 수신: %s\n", ipaddr); // 서버가 보낸게 아니라면, 서버는 맨끝 바이트를 -1로 초기화
-		if (buf_UDP[BUFSIZE - 1] == -1) continue;
+		if (strcmp(buf_UDP, "UDP_CLIENT_ACK") == 0) {
+			WSAAddressToString((SOCKADDR*)&peeraddr_v6, sizeof(peeraddr_v6), NULL, ipaddr, &ipaddrlen);
+			DisplayText_Acc("[UDPv6 서버] 클라이언트 접속: %s\n", ipaddr); // 서버가 보낸게 아니라면, 서버는 맨끝 바이트를 -1로 초기화
+			continue;
+		}
 
+		if (buf_UDP[BUFSIZE - 1] == -1) continue;
+		
 		buf_UDP[BUFSIZE - 1] = -1;
+
+		// UDP v6에게 보냄
 		retvalUDP = sendto(send_sock_UDPv6, buf_UDP, BUFSIZE, 0,
 			(SOCKADDR*)&remoteaddr_v6, sizeof(remoteaddr_v6));
 		if (retvalUDP == SOCKET_ERROR) {
 			err_display("sendto()");
 			continue;
+		}
+
+		// UDP v4 에게도 보냄
+		retvalUDP = sendto(send_sock_UDPv4, buf_UDP, BUFSIZE, 0,
+			(SOCKADDR*)&remoteaddr_v4, sizeof(remoteaddr_v4));
+
+		if (retvalUDP == SOCKET_ERROR) {
+			err_display("sendto()");
+			continue;
+		}
+
+		// to TCP
+		for (int j = 0; j < nTotalSockets; j++) {
+			SOCKETINFO* ptr2 = SocketInfoArray[j];
+			retvalTCP = send(ptr2->sock, buf_UDP, BUFSIZE, 0);
+			if (retvalTCP == SOCKET_ERROR) {
+				err_display("send()");
+				RemoveSocketInfo(j);
+				--j; // 루프 인덱스 보정
+				continue;
+			}
 		}
 	}
 }
