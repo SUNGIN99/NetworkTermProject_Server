@@ -1,0 +1,126 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "winres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// 한국어(대한민국) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_KOR)
+LANGUAGE LANG_KOREAN, SUBLANG_DEFAULT
+#pragma code_page(949)
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#include ""winres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_DIALOG1 DIALOGEX 0, 0, 461, 223
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Server GUI"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    EDITTEXT        IDC_USERADDR1,275,71,152,14,ES_AUTOHSCROLL | ES_READONLY
+    EDITTEXT        IDC_EDIT_ALLMSG,7,158,219,58,ES_MULTILINE | ES_AUTOHSCROLL | ES_READONLY | WS_VSCROLL | WS_HSCROLL
+    EDITTEXT        IDC_USERNAME1,275,41,152,14,ES_AUTOHSCROLL | ES_READONLY
+    LTEXT           "User Name |",IDC_STATIC,21,17,40,8
+    LTEXT           "Access IP |",IDC_STATIC,62,17,36,8
+    PUSHBUTTON      "추방",IDC_BUTTON_OUT1,405,27,23,14
+    COMBOBOX        IDC_COMBO1,18,129,48,73,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
+    EDITTEXT        IDC_EDIT_SENDTO_C,72,129,296,14,ES_AUTOHSCROLL
+    PUSHBUTTON      "전송",IDC_BUTTON_SEND,374,130,23,14
+    PUSHBUTTON      "게임시작",IDC_BUTTON_GAME,402,129,50,14
+    EDITTEXT        IDC_EDIT_ALLMSG2,233,158,221,58,ES_MULTILINE | ES_AUTOHSCROLL | ES_READONLY | WS_VSCROLL
+    LTEXT           "Accesses",IDC_STATIC,9,148,30,8
+    LTEXT           "Server MSG",IDC_STATIC,235,148,38,8
+    LISTBOX         IDC_USERLIST,19,28,237,96,LBS_HASSTRINGS | LBS_USETABSTOPS | LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "TCP/UDP",IDC_STATIC,100,17,30,8
+    LTEXT           "Selected User",IDC_STATIC,275,30,45,8
+    LTEXT           "Selected IP",IDC_STATIC,276,61,37,8
+    EDITTEXT        IDC_COUNT,222,14,32,14,ES_AUTOHSCROLL | ES_READONLY
+    LTEXT           "명",IDC_STATIC,257,17,8,8
+    LTEXT           "접속 사용자",IDC_STATIC,178,17,40,8
+    EDITTEXT        IDC_USERTCP,275,98,152,14,ES_AUTOHSCROLL | ES_READONLY
+    LTEXT           "Selected TCP | UDP",IDC_STATIC,276,88,63,8
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO
+BEGIN
+    IDD_DIALOG1, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 454
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 216
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// AFX_DIALOG_LAYOUT
+//
+
+IDD_DIALOG1 AFX_DIALOG_LAYOUT
+BEGIN
+    0
+END
+
+#endif    // 한국어(대한민국) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+
