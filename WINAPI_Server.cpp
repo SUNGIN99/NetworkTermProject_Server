@@ -37,6 +37,10 @@ typedef struct CHAT_MSG_
 	char whoSent;
 }CHAT_MSG;
 
+typedef struct KICKOUT_MSG_ {
+	int type;
+	char dummy[MSGSIZE];
+}KICKOUT_MSG;
 
 struct SOCKETINFO
 {
@@ -176,6 +180,11 @@ BOOL CALLBACK WndProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	// 6) 게임 관련 버튼
 	// IDC_BUTTON_GAME
 	static HWND			 hGameBtn;
+
+	if (nTotalSockets_P == 0)
+		EnableWindow(hUserOutBtns, FALSE);
+	else
+		EnableWindow(hUserOutBtns, TRUE);
 
 /* <-------------------- [1] 컨트롤 핸들 지역변수 ------------------------> */
 
@@ -807,24 +816,38 @@ bool Addto_AllSocketInfo(SOCKET sock, char *username, int isIPv6, int isUDP, SOC
 void RemoveFrom_AllSocketInfo(int index) {
 	SOCKETINFO_UDPnTCP* ptr = AllSocketInfoArray;
 	SOCKETINFO_UDPnTCP* prev = NULL;
-	CHAT_MSG endMsg = { KICKOUT };
-	int i = 0;
-	int retval;
+
+	KICKOUT_MSG endMsg;
+	endMsg.type = KICKOUT;
+
+	char ipaddr[50];
+	DWORD ipaddrlen = sizeof(ipaddr);
+
+	int i = 0, retval;
 	while (ptr != NULL) {
 		
 		if (index == i) {
 			if (ptr->isUDP == false) 
-				retval = send(ptr->sock, (char*)&endMsg, BUFSIZE, 0);
+				retval = send(ptr->sock, (char*)&endMsg , BUFSIZE , 0);
 		
 			else {
 				if (ptr->isIPv6 == false) {
+					WSAAddressToString((SOCKADDR*)&All_Sock.remoteaddr_v4, sizeof(SOCKADDR_IN),
+						NULL, ipaddr, &ipaddrlen);
+
 					retval = sendto(All_Sock.udp_send_v4, (char*)&endMsg , BUFSIZE, 0,
 						(SOCKADDR*)&(All_Sock.remoteaddr_v4), sizeof(All_Sock.remoteaddr_v4));
+					DisplayText_Acc("[UDPv4 서버] 클라이언트 종료: %s\n", ipaddr);
 				}
 				else {
+					WSAAddressToString((SOCKADDR*)&All_Sock.remoteaddr_v6, sizeof(SOCKADDR_IN6),
+						NULL, ipaddr, &ipaddrlen);
+
 					retval = sendto(All_Sock.udp_send_v6, (char*)&endMsg, BUFSIZE, 0,
 						(SOCKADDR*)&(All_Sock.remoteaddr_v6), sizeof(SOCKADDR_IN6));
+					DisplayText_Acc("[UDPv4 서버] 클라이언트 종료: %s\n", ipaddr);
 				}
+				
 			}
 
 			if (prev)
@@ -844,13 +867,14 @@ void RemoveFrom_AllSocketInfo(int index) {
 	resetUserCount();
 	updateUserList();
 	updateComboBox();
-	DisplayText_Send("i = %d index = %d ret = %d\r\n", i, index, retval);
+	//DisplayText_Send("i = %d index = %d ret = %d\r\n", i, index, retval);
 
 }
 
 void resetUserCount() {
 	char count[4];
-	itoa(nTotalSockets_P, count, 4);
+	ZeroMemory(count, 4);
+	itoa(nTotalSockets_P, count, 10);
 	SendMessage(hUserCount, EM_SETSEL, 0, 4);
 	SendMessage(hUserCount, WM_CLEAR, 0, 0);
 	SendMessage(hUserCount, EM_REPLACESEL, FALSE, (LPARAM)count);
@@ -875,7 +899,8 @@ void selectedUser(char* selectedItem, int index) {
 	strncpy(username, ptr, 20);
 
 	ptr = strtok(NULL, "\t");
-	strncpy(ipaddr, ptr, 28);
+	strncpy(ipaddr, ptr, 65);
+	ipaddr[64] = NULL;
 
 	ptr = strtok(NULL, "\t");
 	strncpy(TorU, ptr, 5);
