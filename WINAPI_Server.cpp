@@ -21,54 +21,65 @@
 #define SERVERPORT  9000
 #define REMOTEPORT  9000
 
-#define BUFSIZE     257                  
-#define MSGSIZE     (BUFSIZE-sizeof(int)-ID_SIZE-CHECK_WHO) 
+#define BUFSIZE     280                  
+#define MSGSIZE     (BUFSIZE-sizeof(int)-ID_SIZE-CHECK_WHO-TIME_SIZE) 
 #define ID_SIZE     20
 #define CHECK_WHO   1
+#define TIME_SIZE   23
 
+#define CHATTING    2000    
 #define ACCESS	    3000
 #define KICKOUT     3001
+#define SERVERMSG	3002
+#define CHECKALIVE	3003
 
-typedef struct CHAT_MSG_
-{
-	int  type;
-	char client_id[ID_SIZE];
-	char buf[MSGSIZE];
-	char whoSent;
+
+// 0) 클라이언트 Access 메세지 (클라이언트에게 받기만 함)
+typedef struct CHAT_MSG_ {
+	int  type;					// 메세지 타입 (CHATTING: 채팅, DRAWERS: 그림, ACCESS: 최초접속)
+	char client_id[ID_SIZE];	// 클라이언트 ID
+	char buf[MSGSIZE];			// 메세지 버퍼
+	char whenSent[TIME_SIZE];
+	char whoSent;			    // 서버에서 보냈다면 whoSent = -1 그 외에는 NULL
 }CHAT_MSG;
 
+// 1) 클라이언트 추방 메세지 (클라이언트에게 보내기만 함)
 typedef struct KICKOUT_MSG_ {
-	int type;
-	char dummy[MSGSIZE];
+	int type;				// KICKOUT = 3001 담아서 클라에게 보냄, 클라는 해당 타입메세지 받을시 소켓 스레드 종료
+	char dummy[MSGSIZE + ID_SIZE + CHECK_WHO+TIME_SIZE];    // 더미 데이터
 }KICKOUT_MSG;
 
-struct SOCKETINFO
-{
+// 2) TCP select 함수에 사용할 배열
+struct SOCKETINFO_ONLY_TCP {
 	SOCKET		sock;
 	bool		isIPv6;
-	CHAT_MSG    buf;
+	CHAT_MSG    chatmsg;
 	int			recvbytes;
 };
-int nTotalSockets = 0;
-SOCKETINFO* SocketInfoArray[FD_SETSIZE];
+int nTotalTCPSockets = 0;
+SOCKETINFO_ONLY_TCP* SocketInfoArray[FD_SETSIZE];
 
-
+// 3) TCP UDP 연결리스트
 struct SOCKETINFO_UDPnTCP {
-	SOCKET sock;
-	char	 client_id[ID_SIZE];
-	char	 socktype[4];
-	int		 isIPv6;
-	int		 isUDP;
+	// 1) 소켓 관련 정보 (소켓, 소켓 IP주소, IPv6, UDP판별 변수)
+	SOCKET			sock;			// TCP 소켓 정보 (isUDP == FALSE)
+	char			client_id[ID_SIZE]; // 클라이언트 ID
+	CHAT_MSG		chatmsg;			// 수신 받을 데이터
+	SOCKADDR_IN* sockaddrv4;		// IPv4 어드레스 (isIPv6 == FALSE)
+	SOCKADDR_IN6* sockaddrv6;		// IPv6 어드레스 (isIPv6 == TRUE)
+	bool			isIPv6;			// IPv6 판별함수 
+	bool			isUDP;			// UDP 판별함수
+	char			socktype[8];	// 소켓 타입 문자열 ("TCP\0", "UDP\0")
 
-	SOCKADDR_IN* sockaddrv4;
-	SOCKADDR_IN6* sockaddrv6;
-
-	int		 recvbytes;
-	SOCKETINFO_UDPnTCP* next;
+	// 2) recv/send bytes	
+	int				recvbytes;      // 받은 바이트 수
+	int				sendbytes;      // 보낼 바이트 수
+	BOOL			recvdelayed;
+	SOCKETINFO_UDPnTCP* next;       // 다음 노드
 };
-int nTotalSockets_P = 0;
-int curIndexLB, curIndexCB;
+int nALLSockets = 0;
 SOCKETINFO_UDPnTCP* AllSocketInfoArray = NULL;
+int curIndexLB, curIndexCB;
 
 typedef struct ALL_SERVER_SOCKET_ {
 	SOCKET tcp_v4;
@@ -89,26 +100,41 @@ struct SOCKET_SendnRecv {
 };
 
 /* <------------------    [1] 컨트롤 전역변수    ------------------> */
-static HINSTANCE     g_hInst; // 응용 프로그램 인스턴스 핸들
-static HANDLE		 g_hServerThread;
-static HWND			 hEdit_User_Send;
-static HWND			 hEdit_Serv_Send;
+static HINSTANCE     g_hInst;			// 응용 프로그램 인스턴스 핸들
+static HANDLE		 g_hServerThread;   // 서버 스레드
+static HANDLE		 g_ServerSendThread;
+static HANDLE		 S_WRITE, S_READY;
 
-//유저리스트
-// IDC_USERLIST
-static HWND			 hUserList;
-static HWND			 hUserCount;
-static HWND			 hUserCombo;
+static HWND			 hEdit_User_Send;	// 송신 EditControll
+static HWND			 hEdit_Serv_Send;	// 수신 EditControll
 
-static HWND		     hUserNames;// 2) IDC_USERNAME1 ~ IDC_USERNAME5
-static HWND			 hUserAddrs;// 3) IDC_USERADDR1 ~ IDC_USERADDR5
-static HWND          hUserTCPorUDP;
+// 유저리스트
+static HWND			 hUserList;			// IDC_USERLIST : 유저 List Box 
+static HWND			 hUserCount;		// 유저 수 표시 Edit Controll
+static HWND			 hUserCombo;		// 유저 Combo Box
 
+// 추방할 유저 정보
+static HWND		     hUserNames;		// IDC_USERNAME
+static HWND			 hUserAddrs;		// IDC_USERADDR
+static HWND          hUserTCPorUDP;     // IDC_USERTCP
+
+// 콤보박스 or 리스트박스 선택시 유지할 전역변수
 static int			 userIndex_name;
 static int			 userIndex_out;
 static int			 userIndex_addr;
 
-static CHAT_MSG		 g_chatmsg;
+static HWND			serverTCPIPv4; static HWND			serverTCPPORTv4;
+static HWND			serverTCPIPv6; static HWND			serverTCPPORTv6;
+static HWND			serverUDPIPv4; static HWND			serverUDPPORTv4;
+static HWND			serverUDPIPv6; static HWND			serverUDPPORTv6;
+
+static char strTCPv4[60], strTCPv6[60], strUDPv4[60], strUDPv6[60];
+static char strTPORTv4[10], strTPORTv6[10], strUPORTv4[10], strUPORTv6[10];
+
+static HWND			serverOpenBtn;
+
+// 서버에서 보낼 송신 메세지  // CHAT_MST = {SERVERMSG, "SERVER", 메세지내용, -1}
+static CHAT_MSG		 g_chatmsg; 
 
 /* <------------------    [1] 컨트롤 전역변수    ------------------> */
 
@@ -117,30 +143,33 @@ static CHAT_MSG		 g_chatmsg;
 // A) 소켓 관리 함수
 BOOL AddSocketInfo(SOCKET sock, bool isIPv6);
 void RemoveSocketInfo(int nIndex);
+BOOL AddAllSocketInfo(SOCKET sock, char* username, int checkIPv6, int checkUDP, SOCKADDR* peeraddr);
+void RemoveAllSocketInfo(int index);
 
 // B)출력부
 void DisplayText_Acc(char* fmt, ...);
 void DisplayText_Send(char* fmt, ...);
 void err_quit(char* msg);
 void err_display(char* msg);
+void err_display(int errcode);
 
 // C) 사용자 정의함수
-bool Addto_AllSocketInfo(SOCKET sock, char* username, int isIPv6, int isUDP, SOCKADDR* addr);
-void RemoveFrom_AllSocketInfo(int index);
-char* listupText(char* fmt, ...);
-void selectedUser(char* selectedItem, int index);
-void updateComboBox();
-void updateUserList();
-void resetUserCount();
+char* listupText(char* fmt, ...);					// C-1) 리스트 박스 출력 문자열 반환 함수
+void selectedUser(char* selectedItem, int index);	// C-2) 선택된 유저 추방 정보 채우기위한 문자열 반환 함수
+void updateComboBox();								// C-3) 유지된 연결리스트로 콤보박스 최신화
+void updateUserList();								// C-4) 유지된 연결리스트로 콤보박스 최신화
+void resetUserCount();								// C-5) 유지된 연결리스트로 현재 접속 유저 수 최신화
+void clearSelected();
 
-BOOL CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM); // 컨트롤 핸들러 (서버 GUI 프로시저)
-DWORD WINAPI TCP(LPVOID); // TCP 통신 스레드(소켓 입출력 모델 사용)
-DWORD WINAPI UDPv4_Multicast(LPVOID); // UDPv4 통신 스레드
-DWORD WINAPI UDPv6_Multicast(LPVOID); // UDPv6 통신 스레드
+BOOL CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);	// 컨트롤 핸들러 (서버 GUI 프로시저)
+DWORD WINAPI TCP(LPVOID);							// TCP 통신 스레드(소켓 입출력 모델 사용)
+DWORD WINAPI UDPv4_Multicast(LPVOID);				// UDPv4 통신 스레드
+DWORD WINAPI UDPv6_Multicast(LPVOID);				// UDPv6 통신 스레드
 
-int SendtoAll(); // 프로토콜 통합 데이터 전송함수
+int sendNow;								// 프로토콜 통합 데이터 전송함수
 
-DWORD WINAPI ServerMain(LPVOID arg);
+// D) 모든 통신스레드의 부모스레드(Server에서 사용할 소켓 정보 초기화 스레드)
+DWORD WINAPI ServerMain(LPVOID);
 
 /* <------------------    [2] 콜백 및 통신 스레드 함수 선언    ------------------> */
 
@@ -151,12 +180,22 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	WSADATA wsa;
 	if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return 1;
 
+	S_READY = CreateEvent(NULL, FALSE, TRUE, NULL);
+	if (S_READY == NULL) return 1;
+	S_WRITE = CreateEvent(NULL, FALSE, FALSE, NULL);
+	if (S_WRITE == NULL) return 1;
+
 	// 변수초기화
-	g_chatmsg.type = 0;
+	g_chatmsg.type = CHATTING;
+	strncpy(g_chatmsg.client_id, "FROMSERVER", 20);
+	sendNow = 0;
 
 	// 대화상자 생성
 	g_hInst = hInstance;
 	DialogBox(hInstance, MAKEINTRESOURCE(IDD_DIALOG1), NULL, WndProc);
+
+	CloseHandle(S_READY);
+	CloseHandle(S_WRITE);
 
 	// 윈속 종료
 	WSACleanup();
@@ -175,13 +214,12 @@ BOOL CALLBACK WndProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	// IDC_EDIT_SENDTO_C : 유저에게 보낼 메시지
 	// IDC_BUTTON_SEND : 유저에게 메시지 보내기 버튼
 	static HWND			 hSendtoUserMsg;
-	static HWND			 hSendtoUserBtn;
 
 	// 6) 게임 관련 버튼
 	// IDC_BUTTON_GAME
 	static HWND			 hGameBtn;
 
-	if (nTotalSockets_P == 0)
+	if (nALLSockets == 0)
 		EnableWindow(hUserOutBtns, FALSE);
 	else
 		EnableWindow(hUserOutBtns, TRUE);
@@ -199,23 +237,55 @@ BOOL CALLBACK WndProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		hUserOutBtns = GetDlgItem(hDlg, IDC_BUTTON_OUT1);
 		hUserTCPorUDP = GetDlgItem(hDlg, IDC_USERTCP);
 
-		hUserCombo = GetDlgItem(hDlg, IDC_COMBO1);
-		hSendtoUserMsg = GetDlgItem(hDlg, IDC_EDIT_SENDTO_C);
-		hSendtoUserBtn = GetDlgItem(hDlg, IDC_BUTTON_SEND);
-
 		hUserList = GetDlgItem(hDlg, IDC_USERLIST);
 		hUserCount = GetDlgItem(hDlg, IDC_COUNT);
 
+		serverTCPIPv4 = GetDlgItem(hDlg, IDC_TCP_IPV4);
+		serverTCPIPv6 = GetDlgItem(hDlg, IDC_TCP_IPV6);
+		serverUDPIPv4 = GetDlgItem(hDlg, IDC_UDP_IPV4);
+		serverUDPIPv6 = GetDlgItem(hDlg, IDC_UDP_IPV6);
+
+
+		serverTCPPORTv4 = GetDlgItem(hDlg, IDC_TCP_PORTV4);
+		serverTCPPORTv6 = GetDlgItem(hDlg, IDC_TCP_PORTV6);
+		serverUDPPORTv4 = GetDlgItem(hDlg, IDC_UDP_PORTV4);
+		serverUDPPORTv6 = GetDlgItem(hDlg, IDC_UDP_PORTV6);
+
+		serverOpenBtn = GetDlgItem(hDlg, IDC_SERVEROPEN);
+
 		// 컨트롤 초기화
-		g_hServerThread = CreateThread(NULL, 0, ServerMain, NULL, 0, NULL);
+		SetDlgItemText(hDlg, IDC_TCP_IPV4, SERVERIPV4);
+		SetDlgItemText(hDlg, IDC_TCP_IPV6, SERVERIPV6);
+		SetDlgItemText(hDlg, IDC_UDP_IPV4, MULTICAST_RECV_IPv4);
+		SetDlgItemText(hDlg, IDC_UDP_IPV6, MULTICAST_RECV_IPv6);
+
+		SetDlgItemText(hDlg, IDC_TCP_PORTV4, "9000");
+		SetDlgItemText(hDlg, IDC_TCP_PORTV6, "9000");
+		SetDlgItemText(hDlg, IDC_UDP_PORTV4, "9000");
+		SetDlgItemText(hDlg, IDC_UDP_PORTV6, "9000");
 
 		return TRUE;
 
 	case WM_COMMAND:
 		switch (LOWORD(wParam)) {
-		case IDC_BUTTON_SEND:
-			GetDlgItemText(hDlg, IDC_EDIT_SENDTO_C, (LPSTR)g_chatmsg.buf, MSGSIZE);
-			DisplayText_Send("[To All] %s \r\n", g_chatmsg.buf);
+		case IDC_SERVEROPEN:
+			g_hServerThread = CreateThread(NULL, 0, ServerMain, NULL, 0, NULL);
+			EnableWindow(serverOpenBtn, FALSE);
+			EnableWindow(serverTCPIPv4, FALSE); EnableWindow(serverTCPPORTv4, FALSE);
+			EnableWindow(serverTCPIPv6, FALSE); EnableWindow(serverTCPPORTv6, FALSE);
+			EnableWindow(serverUDPIPv4, FALSE); EnableWindow(serverUDPPORTv4, FALSE);
+			EnableWindow(serverUDPIPv6, FALSE); EnableWindow(serverUDPPORTv6, FALSE);
+
+			GetDlgItemText(hDlg, IDC_TCP_IPV4, strTCPv4, sizeof(strTCPv4));
+			GetDlgItemText(hDlg, IDC_TCP_IPV6, strTCPv6, sizeof(strTCPv6));
+			GetDlgItemText(hDlg, IDC_UDP_IPV4, strUDPv4, sizeof(strUDPv4));
+			GetDlgItemText(hDlg, IDC_UDP_IPV6, strUDPv6, sizeof(strUDPv6));
+
+			GetDlgItemText(hDlg, IDC_TCP_PORTV4, strTPORTv4, sizeof(strTPORTv4));
+			GetDlgItemText(hDlg, IDC_TCP_PORTV6, strTPORTv6, sizeof(strTPORTv6));
+			GetDlgItemText(hDlg, IDC_UDP_PORTV4, strUPORTv4, sizeof(strUPORTv4));
+			GetDlgItemText(hDlg, IDC_UDP_PORTV6, strUPORTv6, sizeof(strUPORTv6));
+
 			return TRUE;
 
 		case IDC_USERLIST:
@@ -229,7 +299,7 @@ BOOL CALLBACK WndProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			return TRUE;
 
 		case IDC_BUTTON_OUT1:
-			RemoveFrom_AllSocketInfo(curIndexLB);
+			RemoveAllSocketInfo(curIndexLB);
 			return TRUE;
 		}
 
@@ -239,6 +309,8 @@ BOOL CALLBACK WndProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	}
 	return FALSE;
 }
+
+
 DWORD WINAPI ServerMain(LPVOID arg) {
 	int retval;
 
@@ -309,12 +381,6 @@ DWORD WINAPI ServerMain(LPVOID arg) {
 	return 0;
 }
 
-DWORD WINAPI SENDTOALL(LPVOID arg) {
-	DisplayText_Send("%s \r\n", g_chatmsg.buf);
-
-	return 0;
-}
-
 DWORD WINAPI TCP(LPVOID arg) {
 	ALL_SERVER_SOCKET* socks = (ALL_SERVER_SOCKET*) arg;
 	SOCKET listen_sockv4 = socks->tcp_v4;
@@ -370,7 +436,7 @@ DWORD WINAPI TCP(LPVOID arg) {
 		FD_ZERO(&rset);
 		FD_SET(listen_sockv4, &rset);
 		FD_SET(listen_sockv6, &rset);
-		for (i = 0; i < nTotalSockets; i++) {
+		for (i = 0; i < nTotalTCPSockets; i++) {
 			FD_SET(SocketInfoArray[i]->sock, &rset);
 		}
 
@@ -391,7 +457,7 @@ DWORD WINAPI TCP(LPVOID arg) {
 			}
 			else {
 				// 접속한 클라이언트 정보 출력
-				DisplayText_Acc("[TCPv4 서버] 클라이언트 접속: [%s]:%d \r\n",
+				DisplayText_Acc("[TCPv4] 클라이언트 접속 확인: [%s]:%d \r\n",
 					inet_ntoa(clientaddrv4.sin_addr), ntohs(clientaddrv4.sin_port));
 				// 소켓 정보 추가
 				AddSocketInfo(client_sock, false);
@@ -410,7 +476,7 @@ DWORD WINAPI TCP(LPVOID arg) {
 				DWORD ipaddrlen = sizeof(ipaddr);
 				WSAAddressToString((SOCKADDR*)&clientaddrv6, sizeof(clientaddrv6),
 					NULL, ipaddr, &ipaddrlen);
-				DisplayText_Acc("[TCPv6 서버] 클라이언트 접속: %s \r\n", ipaddr);
+				DisplayText_Acc("[TCPv6] 클라이언트 접속 확인: %s \r\n", ipaddr);
 
 				// 소켓 정보 추가
 				AddSocketInfo(client_sock, true);
@@ -418,21 +484,23 @@ DWORD WINAPI TCP(LPVOID arg) {
 		}
 
 		// 소켓 셋 검사(2): 데이터 통신
-		for (i = 0; i < nTotalSockets; i++) {
-			SOCKETINFO* ptr = SocketInfoArray[i];
+		for (i = 0; i < nTotalTCPSockets; i++) {
+			SOCKETINFO_ONLY_TCP* ptr = SocketInfoArray[i];
 			if (FD_ISSET(ptr->sock, &rset)) {
 				// 데이터 받기
-				retval = recv(ptr->sock, (char*)&(ptr->buf) + ptr->recvbytes,
+				retval = recv(ptr->sock, (char*)&(ptr->chatmsg) + ptr->recvbytes,
 					BUFSIZE - ptr->recvbytes, 0);
 				if (retval == 0 || retval == SOCKET_ERROR) {
 					RemoveSocketInfo(i);
 					continue;
 				}
-
-				if (ptr->buf.type == ACCESS) {
-					Addto_AllSocketInfo(ptr->sock, ptr->buf.client_id, ptr->isIPv6, FALSE, NULL);
+				if (ptr->chatmsg.type == ACCESS) {
+					AddAllSocketInfo(ptr->sock, ptr->chatmsg.client_id, ptr->isIPv6, FALSE, NULL);
 					continue;
 				}
+
+				if (ptr->chatmsg.type == CHATTING)
+					DisplayText_Send("[%s]-[%s]: %s\r\n", ptr->chatmsg.whenSent, ptr->chatmsg.client_id, ptr->chatmsg.buf);
 
 				// 받은 바이트 수 누적
 				ptr->recvbytes += retval;
@@ -442,10 +510,10 @@ DWORD WINAPI TCP(LPVOID arg) {
 					ptr->recvbytes = 0;
 
 					// 현재 접속한 모든 클라이언트에게 데이터를 보냄!
-					for (j = 0; j < nTotalSockets; j++) {
-						SOCKETINFO* ptr2 = SocketInfoArray[j];
-
-						retval = send(ptr2->sock, (char*)&(ptr->buf), BUFSIZE, 0);
+					for (j = 0; j < nTotalTCPSockets; j++) {
+						SOCKETINFO_ONLY_TCP* ptr2 = SocketInfoArray[j];
+						retval = send(ptr2->sock, (char*)&(ptr->chatmsg), BUFSIZE, 0);
+							
 						if (retval == SOCKET_ERROR) {
 							err_display("send()");
 							RemoveSocketInfo(j);
@@ -455,11 +523,10 @@ DWORD WINAPI TCP(LPVOID arg) {
 					}
 
 					// UDP 에게도 보내기
-					retvalUDP = sendto(send_sock_UDPv4, (char*)&(ptr->buf), BUFSIZE, 0,
+					retvalUDP = sendto(send_sock_UDPv4, (char*)&(ptr->chatmsg), BUFSIZE, 0,
 						(SOCKADDR*)&remoteaddr_v4, sizeof(remoteaddr_v4));
-
 					// UDP 에게도 보내기
-					retvalUDP = sendto(send_sock_UDPv6, (char*)&(ptr->buf), BUFSIZE, 0,
+					retvalUDP = sendto(send_sock_UDPv6, (char*)&(ptr->chatmsg), BUFSIZE, 0,
 						(SOCKADDR*)&remoteaddr_v6, sizeof(remoteaddr_v6));
 				}
 			}
@@ -523,10 +590,10 @@ DWORD WINAPI UDPv4_Multicast(LPVOID arg) {
 	
 	Sleep(3000);
 	while (1) {
-		CHAT_MSG* buf = (CHAT_MSG*) malloc(sizeof(CHAT_MSG));
+		CHAT_MSG* chatmsg = (CHAT_MSG*) malloc(sizeof(CHAT_MSG));
 		addrlen_UDP = sizeof(peeraddr_v4);
 
-		retvalUDP = recvfrom(listen_sock_UDPv4, (char*)(buf), BUFSIZE, 0,
+		retvalUDP = recvfrom(listen_sock_UDPv4, (char*)(chatmsg), BUFSIZE, 0,
 			(SOCKADDR*)&peeraddr_v4, &addrlen_UDP); // peeraddr NULL 로 해도 ㄱㅊ
 
 		// 서버에서는 BUFSIZE+1 만큼 더 보냄
@@ -536,19 +603,22 @@ DWORD WINAPI UDPv4_Multicast(LPVOID arg) {
 			continue;
 		}
 
-		if (buf->type == ACCESS) {
+		if (chatmsg->type == ACCESS) {
 			//SendMessage(hUserList, LB_ADDSTRING, 0, (LPARAM)(char*)&(ptr->buf.client_id));
 			WSAAddressToString((SOCKADDR*)&peeraddr_v4, sizeof(peeraddr_v4), NULL, ipaddr, &ipaddrlen);
-			DisplayText_Acc("[UDPv4 서버] 클라이언트 접속: %s\n", ipaddr); // 서버가 보낸게 아니라면, 서버는 맨끝 바이트를 -1로 초기화
-			Addto_AllSocketInfo(NULL, buf->client_id, FALSE, TRUE, (SOCKADDR*)&peeraddr_v4);
+			DisplayText_Acc("[UDPv4] 클라이언트 접속: %s\n", ipaddr); // 서버가 보낸게 아니라면, 서버는 맨끝 바이트를 -1로 초기화
+			AddAllSocketInfo(NULL, chatmsg->client_id, FALSE, TRUE, (SOCKADDR*)&peeraddr_v4);
 			continue;
 		}
+
+		if (chatmsg->type == CHATTING)
+					DisplayText_Send("[%s]-[%s]: %s\r\n", chatmsg->whenSent, chatmsg->client_id, chatmsg->buf);
 	
-		if (buf->whoSent == -1) continue;
-		buf->whoSent = -1;
+		if (chatmsg->whoSent == -1) continue;
+		chatmsg->whoSent = -1;
 
 		// UDP v4에게 보냄
-		retvalUDP = sendto(send_sock_UDPv4, (char*)(buf), BUFSIZE, 0,
+		retvalUDP = sendto(send_sock_UDPv4, (char*)(chatmsg), BUFSIZE, 0,
 			(SOCKADDR*)&remoteaddr_v4, sizeof(remoteaddr_v4));
 
 		if (retvalUDP == SOCKET_ERROR) {
@@ -557,7 +627,7 @@ DWORD WINAPI UDPv4_Multicast(LPVOID arg) {
 		}
 
 		// UDP v6 에게도 보냄
-		retvalUDP = sendto(send_sock_UDPv6, (char*)(buf), BUFSIZE, 0,
+		retvalUDP = sendto(send_sock_UDPv6, (char*)(chatmsg), BUFSIZE, 0,
 			(SOCKADDR*)&remoteaddr_v6, sizeof(remoteaddr_v6));
 		if (retvalUDP == SOCKET_ERROR) {
 			err_display("sendto()");
@@ -565,9 +635,9 @@ DWORD WINAPI UDPv4_Multicast(LPVOID arg) {
 		}
 
 		// to TCP
-		for (int j = 0; j < nTotalSockets; j++) {
-			SOCKETINFO* ptr2 = SocketInfoArray[j];
-			retvalTCP = send(ptr2->sock, (char*)(buf), BUFSIZE, 0);
+		for (int j = 0; j < nTotalTCPSockets; j++) {
+			SOCKETINFO_ONLY_TCP* ptr2 = SocketInfoArray[j];
+			retvalTCP = send(ptr2->sock, (char*)(chatmsg), BUFSIZE, 0);
 			if (retvalTCP == SOCKET_ERROR) {
 				err_display("send()");
 				RemoveSocketInfo(j);
@@ -639,28 +709,31 @@ DWORD WINAPI UDPv6_Multicast(LPVOID arg) {
 
 	Sleep(3000);
 	while (1) {
-		CHAT_MSG* buf = (CHAT_MSG*)malloc(sizeof(CHAT_MSG));
+		CHAT_MSG* chatmsg = (CHAT_MSG*)malloc(sizeof(CHAT_MSG));
 		addrlen_UDP = sizeof(peeraddr_v6);
-		retvalUDP = recvfrom(listen_sock_UDPv6, (char*)(buf), BUFSIZE, 0,
+		retvalUDP = recvfrom(listen_sock_UDPv6, (char*)(chatmsg), BUFSIZE, 0,
 			(SOCKADDR*)&peeraddr_v6, &addrlen_UDP);
 		if (retvalUDP == SOCKET_ERROR) {
 			err_display("recvfrom()");
 			continue;
 		}
 
-		if (buf->type == ACCESS) {
+		if (chatmsg->type == ACCESS) {
 			//SendMessage(hUserList, LB_ADDSTRING, 0, (LPARAM)(char*)&(ptr->buf.client_id));
 			WSAAddressToString((SOCKADDR*)&peeraddr_v6, sizeof(peeraddr_v6), NULL, ipaddr, &ipaddrlen);
-			DisplayText_Acc("[UDPv6 서버] 클라이언트 접속: %s\n", ipaddr); // 서버가 보낸게 아니라면, 서버는 맨끝 바이트를 -1로 초기화
-			Addto_AllSocketInfo(NULL, buf->client_id, TRUE, TRUE, (SOCKADDR*)&peeraddr_v6);
+			DisplayText_Acc("[UDPv6] 클라이언트 접속: %s\n", ipaddr); // 서버가 보낸게 아니라면, 서버는 맨끝 바이트를 -1로 초기화
+			AddAllSocketInfo(NULL, chatmsg->client_id, TRUE, TRUE, (SOCKADDR*)&peeraddr_v6);
 			continue;
 		}
 
-		if (buf->whoSent == -1) continue;
-		buf->whoSent = -1;
+		if (chatmsg->type == CHATTING)
+			DisplayText_Send("[%s]-[%s]: %s\r\n", chatmsg->whenSent, chatmsg->client_id, chatmsg->buf);
+
+		if (chatmsg->whoSent == -1) continue;
+		chatmsg->whoSent = -1;
 
 		// UDP v6에게 보냄
-		retvalUDP = sendto(send_sock_UDPv6, (char*)(buf), BUFSIZE, 0,
+		retvalUDP = sendto(send_sock_UDPv6, (char*)(chatmsg), BUFSIZE, 0,
 			(SOCKADDR*)&remoteaddr_v6, sizeof(remoteaddr_v6));
 		if (retvalUDP == SOCKET_ERROR) {
 			err_display("sendto()");
@@ -668,7 +741,7 @@ DWORD WINAPI UDPv6_Multicast(LPVOID arg) {
 		}
 
 		// UDP v4 에게도 보냄
-		retvalUDP = sendto(send_sock_UDPv4, (char*)(buf), BUFSIZE, 0,
+		retvalUDP = sendto(send_sock_UDPv4, (char*)(chatmsg), BUFSIZE, 0,
 			(SOCKADDR*)&remoteaddr_v4, sizeof(remoteaddr_v4));
 
 		if (retvalUDP == SOCKET_ERROR) {
@@ -677,9 +750,9 @@ DWORD WINAPI UDPv6_Multicast(LPVOID arg) {
 		}
 
 		// to TCP
-		for (int j = 0; j < nTotalSockets; j++) {
-			SOCKETINFO* ptr2 = SocketInfoArray[j];
-			retvalTCP = send(ptr2->sock, (char*)(buf), BUFSIZE, 0);
+		for (int j = 0; j < nTotalTCPSockets; j++) {
+			SOCKETINFO_ONLY_TCP* ptr2 = SocketInfoArray[j];
+			retvalTCP = send(ptr2->sock, (char*)(chatmsg), BUFSIZE, 0);
 			if (retvalTCP == SOCKET_ERROR) {
 				err_display("send()");
 				RemoveSocketInfo(j);
@@ -693,12 +766,12 @@ DWORD WINAPI UDPv6_Multicast(LPVOID arg) {
 // 소켓 정보 추가
 BOOL AddSocketInfo(SOCKET sock, bool isIPv6)
 {
-	if (nTotalSockets >= FD_SETSIZE) {
+	if (nTotalTCPSockets >= FD_SETSIZE) {
 		DisplayText_Acc("[오류] 소켓 정보를 추가할 수 없습니다! \r\n");
 		return FALSE;
 	}
 
-	SOCKETINFO* ptr = new SOCKETINFO;
+	SOCKETINFO_ONLY_TCP* ptr = new SOCKETINFO_ONLY_TCP;
 	if (ptr == NULL) {
 		DisplayText_Acc("[오류] 메모리가 부족합니다! \r\n");
 		return FALSE;
@@ -707,7 +780,7 @@ BOOL AddSocketInfo(SOCKET sock, bool isIPv6)
 	ptr->sock = sock;
 	ptr->isIPv6 = isIPv6;
 	ptr->recvbytes = 0;
-	SocketInfoArray[nTotalSockets++] = ptr;
+	SocketInfoArray[nTotalTCPSockets++] = ptr;
 
 	return TRUE;
 }
@@ -715,7 +788,7 @@ BOOL AddSocketInfo(SOCKET sock, bool isIPv6)
 // 소켓 정보 삭제
 void RemoveSocketInfo(int nIndex)
 {
-	SOCKETINFO* ptr = SocketInfoArray[nIndex];
+	SOCKETINFO_ONLY_TCP* ptr = SocketInfoArray[nIndex];
 
 	// 종료한 클라이언트 정보 출력
 	if (ptr->isIPv6 == false) {
@@ -740,23 +813,28 @@ void RemoveSocketInfo(int nIndex)
 	closesocket(ptr->sock);
 	delete ptr;
 
-	if (nIndex != (nTotalSockets - 1))
-		SocketInfoArray[nIndex] = SocketInfoArray[nTotalSockets - 1];
+	if (nIndex != (nTotalTCPSockets - 1))
+		SocketInfoArray[nIndex] = SocketInfoArray[nTotalTCPSockets - 1];
 
-	--nTotalSockets;
+	--nTotalTCPSockets;
+
+	resetUserCount();
+	updateUserList();
+	updateComboBox();
 }
 
 // 소켓 TCP UDP 통합 ArrayList : AllSocketInfoArray
-bool Addto_AllSocketInfo(SOCKET sock, char *username, int isIPv6, int isUDP, SOCKADDR* peeraddr) {
+BOOL AddAllSocketInfo(SOCKET sock, char *username, int isIPv6, int isUDP, SOCKADDR* peeraddr) {
 	SOCKETINFO_UDPnTCP* ptr = new SOCKETINFO_UDPnTCP;
 	SOCKADDR_IN* sockaddrv4 = new SOCKADDR_IN;
 	SOCKADDR_IN6* sockaddrv6 = new SOCKADDR_IN6;
-	char* listupMsg = (char*)malloc(256);
 
+	int addrlen;
+	char* listupMsg = (char*)malloc(256);
 	char* ipaddrv4 = (char*)malloc(INET_ADDRSTRLEN);
 	char* ipaddrv6 = (char*)malloc(INET6_ADDRSTRLEN);
-	int addrlen;
-	DWORD ipaddr6len = INET6_ADDRSTRLEN, ipaddr4len = INET_ADDRSTRLEN;
+	DWORD ipaddr6len = INET6_ADDRSTRLEN;
+	DWORD ipaddr4len = INET_ADDRSTRLEN;
 
 	if (ptr == NULL) {
 		err_display("wrong socket info");
@@ -778,33 +856,34 @@ bool Addto_AllSocketInfo(SOCKET sock, char *username, int isIPv6, int isUDP, SOC
 
 	// 4. UDP 판별 및 프로토콜 가져오기
 	if (isUDP == FALSE) {
-		strncpy(ptr->socktype, "TCP", 4);
-
 		// 3. IPv6 판별 및 주소 가져오기
 		if (isIPv6 == false) {
+			strncpy(ptr->socktype, "TCPv4", 6);
 			addrlen = sizeof(SOCKADDR_IN);
 			getpeername(sock, (SOCKADDR*)sockaddrv4, &addrlen);
 			ptr->sockaddrv4 = sockaddrv4;
 		}
 		else {
+			strncpy(ptr->socktype, "TCPv6", 6);
 			addrlen = sizeof(SOCKADDR_IN6);
 			getpeername(sock, (SOCKADDR*)sockaddrv6, &addrlen);
 			ptr->sockaddrv6 = sockaddrv6;
 		}
 	}
 	else {
-		strncpy(ptr->socktype, "UDP", 4);
-		if (isIPv6 == FALSE) 
+		if (isIPv6 == FALSE) {
+			strncpy(ptr->socktype, "UDPv4", 6);
 			ptr->sockaddrv4 = (SOCKADDR_IN*)peeraddr;
-		else 
+		}	
+		else {
+			strncpy(ptr->socktype, "UDPv6", 6);
 			ptr->sockaddrv6 = (SOCKADDR_IN6*)peeraddr;
-		
+		}
 	}
-	//SendMessage(hUserList, LB_ADDSTRING, 0, (LPARAM)listupMsg);
 
 	ptr->next = AllSocketInfoArray;
 	AllSocketInfoArray = ptr;
-	nTotalSockets_P++;
+	nALLSockets++;
 
 	resetUserCount();
 	updateComboBox();
@@ -813,12 +892,9 @@ bool Addto_AllSocketInfo(SOCKET sock, char *username, int isIPv6, int isUDP, SOC
 	return TRUE;
 }
 
-void RemoveFrom_AllSocketInfo(int index) {
+void RemoveAllSocketInfo(int index) {
 	SOCKETINFO_UDPnTCP* ptr = AllSocketInfoArray;
 	SOCKETINFO_UDPnTCP* prev = NULL;
-
-	KICKOUT_MSG endMsg;
-	endMsg.type = KICKOUT;
 
 	char ipaddr[50];
 	DWORD ipaddrlen = sizeof(ipaddr);
@@ -827,25 +903,28 @@ void RemoveFrom_AllSocketInfo(int index) {
 	while (ptr != NULL) {
 		
 		if (index == i) {
+			KICKOUT_MSG endMsg;
+			endMsg.type = KICKOUT;
+			strncpy(endMsg.dummy, ptr->client_id, ID_SIZE);
 			if (ptr->isUDP == false) 
 				retval = send(ptr->sock, (char*)&endMsg , BUFSIZE , 0);
 		
 			else {
 				if (ptr->isIPv6 == false) {
-					WSAAddressToString((SOCKADDR*)&All_Sock.remoteaddr_v4, sizeof(SOCKADDR_IN),
+					WSAAddressToString((SOCKADDR*)ptr->sockaddrv4, sizeof(SOCKADDR_IN),
 						NULL, ipaddr, &ipaddrlen);
 
 					retval = sendto(All_Sock.udp_send_v4, (char*)&endMsg , BUFSIZE, 0,
-						(SOCKADDR*)&(All_Sock.remoteaddr_v4), sizeof(All_Sock.remoteaddr_v4));
-					DisplayText_Acc("[UDPv4 서버] 클라이언트 종료: %s\n", ipaddr);
+						(SOCKADDR*)&(All_Sock.remoteaddr_v4), sizeof(SOCKADDR_IN));
+					DisplayText_Acc("[UDPv4] 클라이언트 종료: %s\n", ipaddr);
 				}
 				else {
-					WSAAddressToString((SOCKADDR*)&All_Sock.remoteaddr_v6, sizeof(SOCKADDR_IN6),
+					WSAAddressToString((SOCKADDR*)ptr->sockaddrv6, sizeof(SOCKADDR_IN6),
 						NULL, ipaddr, &ipaddrlen);
 
 					retval = sendto(All_Sock.udp_send_v6, (char*)&endMsg, BUFSIZE, 0,
 						(SOCKADDR*)&(All_Sock.remoteaddr_v6), sizeof(SOCKADDR_IN6));
-					DisplayText_Acc("[UDPv4 서버] 클라이언트 종료: %s\n", ipaddr);
+					DisplayText_Acc("[UDPv6] 클라이언트 종료: %s\n", ipaddr);
 				}
 				
 			}
@@ -863,7 +942,7 @@ void RemoveFrom_AllSocketInfo(int index) {
 		i++;
 	}
 
-	nTotalSockets_P--;
+	nALLSockets--;
 	resetUserCount();
 	updateUserList();
 	updateComboBox();
@@ -874,7 +953,7 @@ void RemoveFrom_AllSocketInfo(int index) {
 void resetUserCount() {
 	char count[4];
 	ZeroMemory(count, 4);
-	itoa(nTotalSockets_P, count, 10);
+	itoa(nALLSockets, count, 10);
 	SendMessage(hUserCount, EM_SETSEL, 0, 4);
 	SendMessage(hUserCount, WM_CLEAR, 0, 0);
 	SendMessage(hUserCount, EM_REPLACESEL, FALSE, (LPARAM)count);
@@ -893,7 +972,7 @@ char* listupText(char* fmt, ...) {
 void selectedUser(char* selectedItem, int index) {
 	char username[20];
 	char ipaddr[65];
-	char TorU[5];
+	char TorU[8];
 
 	char* ptr = strtok(selectedItem, "\t");
 	strncpy(username, ptr, 20);
@@ -903,7 +982,7 @@ void selectedUser(char* selectedItem, int index) {
 	ipaddr[64] = NULL;
 
 	ptr = strtok(NULL, "\t");
-	strncpy(TorU, ptr, 5);
+	strncpy(TorU, ptr, 8);
 
 	SendMessage(hUserNames, EM_SETSEL, 0, 20);
 	SendMessage(hUserNames, WM_CLEAR, 0, 0);
@@ -913,7 +992,7 @@ void selectedUser(char* selectedItem, int index) {
 	SendMessage(hUserAddrs, WM_CLEAR, 0, 0);
 	SendMessage(hUserAddrs, EM_REPLACESEL, FALSE, (LPARAM)ipaddr);
 
-	SendMessage(hUserTCPorUDP, EM_SETSEL, 0, 4);
+	SendMessage(hUserTCPorUDP, EM_SETSEL, 0, 8);
 	SendMessage(hUserTCPorUDP, WM_CLEAR, 0, 0);
 	SendMessage(hUserTCPorUDP, EM_REPLACESEL, FALSE, (LPARAM)TorU);
 
@@ -923,8 +1002,8 @@ void updateComboBox() {
 	SOCKETINFO_UDPnTCP* ptr = AllSocketInfoArray;
 
 	SendMessage(hUserCombo, CB_RESETCONTENT, 0, 0);
-
-	int i= 1;
+	SendMessage(hUserCombo, CB_ADDSTRING, 0, (LPARAM)"모두에게");
+	int i= 0;
 	while (ptr != NULL) {
 		SendMessage(hUserCombo, CB_ADDSTRING, 0, (LPARAM)ptr->client_id);
 		ptr = ptr->next;
