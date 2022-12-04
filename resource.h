@@ -17,6 +17,7 @@
 #define IDC_UDP_IPV4                    1022
 #define IDC_UDP_PORTV4                  1023
 #define IDC_SERVEROPEN                  1024
+#define IDC_SERVERCLOSE                 1025
 #define IDC_EDIT_ALLMSG2                1026
 #define IDC_UDP_IPV6                    1032
 #define IDC_UDP_PORTV6                  1033
